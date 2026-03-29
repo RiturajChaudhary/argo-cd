@@ -1,23 +1,20 @@
+# 1️⃣ Use a lightweight Node.js image
 FROM node:20-alpine
 
-# Set working directory
+# 2️⃣ Set working directory
 WORKDIR /app
 
-# Install dependencies
+# 3️⃣ Copy package files
 COPY package*.json ./
-RUN npm ci --only=production
 
-# Copy application files
+# 4️⃣ Install dependencies (works even if package-lock.json is missing)
+RUN npm install --only=production
+
+# 5️⃣ Copy application files
 COPY . .
 
-# Create non-root user for security
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S appuser -u 1001
-USER appuser
-
+# 6️⃣ Expose port (if your app listens on 3000, change if needed)
 EXPOSE 3000
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3000/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
-
-CMD ["node", "server.js"]
+# 7️⃣ Default command
+CMD ["node", "app.js"]
