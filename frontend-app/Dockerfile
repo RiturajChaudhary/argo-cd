@@ -7,14 +7,14 @@ WORKDIR /app
 # 3️⃣ Copy package files
 COPY package*.json ./
 
-# 4️⃣ Install dependencies (works even if package-lock.json is missing)
+# 4️⃣ Install dependencies
 RUN npm install --only=production
 
 # 5️⃣ Copy application files
 COPY . .
 
-# 6️⃣ Expose port (if your app listens on 3000, change if needed)
+# 6️⃣ Expose port
 EXPOSE 3000
 
-# 7️⃣ Default command
-CMD ["node", "app.js"]
+# 7️⃣ Default command ✅ Fixed
+CMD ["npm", "start"]
