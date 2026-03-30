@@ -1,0 +1,115 @@
+pipeline {
+    
+    agent any 
+    
+    environment {
+        IMAGE_TAG = "${BUILD_NUMBER}"
+        EC2_HOST = "ec2-user@100.53.223.165"
+    }
+    
+    stages {
+        
+        // 1️⃣ Checkout App Repo
+        stage('Checkout'){
+           steps {
+                git credentialsId: 'github-argo', 
+                url: 'https://github.com/RiturajChaudhary/argo-cd.git',
+                branch: 'main'
+           }
+        }
+
+        // 2️⃣ Copy Code to EC2 + Build Docker
+        stage('Build Docker (EC2)'){
+            steps{
+                sh """
+                echo "Copy code to EC2"
+                ssh ${EC2_HOST} "rm -rf /home/ec2-user/app || true && mkdir -p /home/ec2-user/app"
+                scp -r * ${EC2_HOST}:/home/ec2-user/app/
+                
+                echo "Build Docker Image on EC2"
+                ssh ${EC2_HOST} '
+                    cd /home/ec2-user/app/frontend-app &&
+                    docker build -t rituraj4164/frontend-app:${BUILD_NUMBER} .
+                '
+                """
+            }
+        }
+
+        // 3️⃣ Push Docker Image from EC2
+        stage('Push the artifacts'){
+           steps{
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-creds',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh """
+                    echo "Login & Push from EC2"
+                    ssh ${EC2_HOST} "echo '${DOCKER_PASS}' | docker login -u '${DOCKER_USER}' --password-stdin && docker push rituraj4164/frontend-app:${BUILD_NUMBER}"
+                    """
+                }
+            }
+        }
+        
+        // 4️⃣ Checkout K8S Manifest Repo
+        stage('Checkout K8S manifest SCM'){
+            steps {
+                git credentialsId: 'github-argo', 
+                url: 'https://github.com/RiturajChaudhary/k8s-config.git',
+                branch: 'main'
+            }
+        }
+        
+        // 5️⃣ Update YAML & Push
+        stage('Update K8S manifest & push to Repo'){
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'github-argo',
+                    passwordVariable: 'GIT_PASSWORD',
+                    usernameVariable: 'GIT_USERNAME'
+                )]) {
+                    sh """
+                    echo "=== Current workspace ==="
+                    pwd
+                    ls -la
+
+                    echo "=== Before Update ==="
+                    cat deployment.yaml
+
+                    echo "=== Updating image tag to ${BUILD_NUMBER} ==="
+                    sed -i "s|image: rituraj4164/frontend-app:.*|image: rituraj4164/frontend-app:${BUILD_NUMBER}|g" deployment.yaml
+
+                    echo "=== After Update ==="
+                    cat deployment.yaml
+
+                    git config user.name "Rituraj"
+                    git config user.email "manojchy4164@gmail.com"
+
+                    git add deployment.yaml
+
+                    echo "=== Git diff ==="
+                    git diff --cached
+
+                    git commit -m "Updated image tag to ${BUILD_NUMBER}" || echo "No changes to commit"
+                    git push https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/RiturajChaudhary/k8s-config.git HEAD:main
+
+                    echo "✅ Successfully pushed image tag ${BUILD_NUMBER} to k8s-config repo"
+                    """
+                }
+            }
+        }
+    }
+
+    // ✅ Post build actions
+    post {
+        success {
+            echo "✅ Pipeline completed successfully! Image tag: ${BUILD_NUMBER}"
+        }
+        failure {
+            echo "❌ Pipeline failed! Check the logs above for errors."
+        }
+        always {
+            echo "🔁 Pipeline finished. Build number: ${BUILD_NUMBER}"
+        }
+    }
+}
